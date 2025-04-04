@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>LineTypes</title>
+    <style>
+      body {
+        font-family: arial;
+        margin: 0;
+        padding: none;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100vw;
+      }
+      .canvas-holder {
+        flex-grow: 1;
+        overflow: hidden;
+      }
+
+      /* the canvas *must not* have any border or padding, or mouse coords will be wrong */
+      canvas.emscripten {
+        border: 0px none;
+        background-color: black;
+        width: 100%;
+        height: 100%;
+        box-sizing: border-box;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="canvas-holder">
+      <canvas
+        class="emscripten"
+        id="canvas"
+        oncontextmenu="event.preventDefault()"
+        tabindex="-1"
+      ></canvas>
+    </div>
+
+    <script src="./../_CommonFiles/notation.js"></script>
+    <script type="text/javascript">
+      var Module = {
+        FS: {},
+        arguments: [],
+        preRun: [],
+        postRun: [
+          function () {
+            function OpenAs(id, type, openMode) {
+              let pObj = id.safeOpenObject(openMode, false);
+              let instance = type.cast(pObj);
+              pObj.delete();
+              return instance;
+            }
+
+            // ------------------- Initialize ODA lib ----------------
+            Module.canvas = document.querySelector("canvas");
+            const {
+              Services,
+              OdDbBlockTableRecord,
+              OdWrFileBuf,
+              OdDbLinetypeTableRecord,
+              OdGeVector2d,
+              OdString,
+              OdDbLinetypeTable,
+              OdDbTextStyleTableRecord,
+              OdDbTextStyleTable,
+              OdDbLine,OdGePoint3d
+            } = Module;
+
+            const services = new Services();
+            services.initialize();
+            let pDb = services.createDatabase();
+            let modelSpaceId = pDb.getModelSpaceId();
+            const pRecord = OpenAs(
+              modelSpaceId,
+              OdDbBlockTableRecord,
+              OpenMode.kForWrite
+            );
+
+            /**********************************************************************/
+            /* Open the Linetype table                                            */
+            /**********************************************************************/
+            var pLinetypes = OpenAs(
+              pDb.getLinetypeTableId(),
+              OdDbLinetypeTable,
+              OpenMode.kForWrite
+            );
+
+            /**********************************************************************/
+            /* Continuous linetype                                                */
+            /**********************************************************************/
+            var pLinetype = OdDbLinetypeTableRecord.createObject();
+            pLinetype.setName(new OdString("Continuous2"));
+            var ltid_Continuous2 = pLinetypes.add(pLinetype);
+            pLinetype.setComments(new OdString("Solid Line"));
+            pLinetype.delete();
+
+            /**********************************************************************/
+            /* Hidden linetype                                                    */
+            /* This is not the standard Hidden linetype, but is used by examples  */
+            /**********************************************************************/
+            pLinetype = OdDbLinetypeTableRecord.createObject();
+            pLinetype.setName(new OdString("Hidden"));
+            var ltid_Hidden = pLinetypes.add(pLinetype);
+            pLinetype.setComments(
+              new OdString("- - - - - - - - - - - - - - - - - - - - -")
+            );
+
+            pLinetype.setNumDashes(2);
+            pLinetype.setPatternLength(0.1875);
+            pLinetype.setDashLengthAt(0, 0.125);
+            pLinetype.setDashLengthAt(1, -0.0625);
+            pLinetype.delete();
+
+            /**********************************************************************/
+            /* Add a TTF text style                                               */
+            /**********************************************************************/
+            var pStyles = OpenAs(
+              pDb.getTextStyleTableId(),
+              OdDbTextStyleTable,
+              OpenMode.kForWrite
+            );
+            var pStyle = OdDbTextStyleTableRecord.createObject();
+
+            pStyle.setName(new OdString("OdaTtfStyle"));
+            pStyle.setIsShapeFile(false);
+
+            var txtStyleId = pStyles.add(pStyle);
+
+            pStyle.setTextSize(0.0);
+            pStyle.setXScale(1.0);
+            pStyle.setPriorSize(0.2);
+            pStyle.setObliquingAngle(0.0);
+            pStyle.setFileName(new OdString("~SaveLemon.ttf~"));
+            pStyle.setFont(new OdString("Save Lemon"), false, false, 0, 34);
+            pStyles.delete();
+            pStyle.delete();
+
+            /**********************************************************************/
+            /* Linetype with text                                                 */
+            /**********************************************************************/
+            pLinetype = OdDbLinetypeTableRecord.createObject();
+            pLinetype.setName(new OdString("HW_ODA"));
+            var ltid_HW_ODA = pLinetypes.add(pLinetype);
+            pLinetype.setComments(new OdString("__ HW __ OD __ HW __ OD __"));
+
+            pLinetype.setNumDashes(6);
+            pLinetype.setPatternLength(1.8);
+            pLinetype.setDashLengthAt(0, 0.5);
+            pLinetype.setDashLengthAt(1, -0.2);
+            pLinetype.setDashLengthAt(2, -0.2);
+            pLinetype.setDashLengthAt(3, 0.5);
+            pLinetype.setDashLengthAt(4, -0.2);
+            pLinetype.setDashLengthAt(5, -0.2);
+
+            pLinetype.setShapeStyleAt(1, txtStyleId);
+            pLinetype.setShapeOffsetAt(1, new OdGeVector2d(-0.1, -0.05));
+            pLinetype.setTextAt(1, new OdString("HW"));
+            pLinetype.setShapeScaleAt(1, 0.1);
+
+            pLinetype.setShapeStyleAt(4, txtStyleId);
+            pLinetype.setShapeOffsetAt(4, new OdGeVector2d(-0.1, -0.05));
+            pLinetype.setTextAt(4, new OdString("OD"));
+            pLinetype.setShapeScaleAt(4, 0.1);
+            pLinetype.delete();
+
+            pLinetypes.delete();
+
+            var modelSpace = OpenAs(
+              pDb.getModelSpaceId(),
+              OdDbBlockTableRecord,
+              OpenMode.kForWrite
+            );
+
+            var pLine = OdDbLine.createObject();
+            pLine.setDatabaseDefaults(pDb, false);
+            pLine.setLinetype1(ltid_Continuous2, true);
+            modelSpace.appendOdDbEntity(pLine);
+            pLine.setStartPoint(new OdGePoint3d(0.0, 100, 0));
+            pLine.setEndPoint(new OdGePoint3d(100.0, 100, 0));
+            pLine.delete();
+
+            pLine = OdDbLine.createObject();
+            pLine.setDatabaseDefaults(pDb, false);
+            pLine.setLinetype1(ltid_Hidden, true);
+            pLine.setLinetypeScale(5, true);
+            modelSpace.appendOdDbEntity(pLine);
+            pLine.setStartPoint(new OdGePoint3d(0.0, 80, 0));
+            pLine.setEndPoint(new OdGePoint3d(100.0, 80, 0));
+            pLine.delete();
+
+            pLine = OdDbLine.createObject();
+            pLine.setDatabaseDefaults(pDb, false);
+            pLine.setLinetype1(ltid_HW_ODA, true);
+            pLine.setLinetypeScale(5, true);
+            modelSpace.appendOdDbEntity(pLine);
+            pLine.setStartPoint(new OdGePoint3d(0.0, 60, 0));
+            pLine.setEndPoint(new OdGePoint3d(100.0, 60, 0));
+            pLine.delete();
+
+            modelSpace.delete();
+            pRecord.delete();
+
+            var cadCore = new Module.CadCore();
+            cadCore.createDevice();
+            cadCore.setDb(pDb);
+            Module.canvas.height = Module.canvas.clientHeight;
+            Module.canvas.width = Module.canvas.clientWidth;
+            cadCore.Resize(Module.canvas.width, Module.canvas.height);
+            cadCore.ZoomExtents();
+            cadCore.Update();
+
+            pDb.delete();
+            services.uninitialize();
+          },
+        ],
+      };
+    </script>
+    <script async type="text/javascript" src="/DrawingWeb.js"></script>
+  </body>
+</html>

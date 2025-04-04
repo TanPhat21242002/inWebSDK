@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Polyline</title>
+    <style>
+      body {
+        font-family: arial;
+        margin: 0;
+        padding: none;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100vw;
+      }
+      .canvas-holder {
+        flex-grow: 1;
+        overflow: hidden;
+      }
+
+      /* the canvas *must not* have any border or padding, or mouse coords will be wrong */
+      canvas.emscripten {
+        border: 0px none;
+        background-color: black;
+        width: 100%;
+        height: 100%;
+        box-sizing: border-box;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="canvas-holder">
+      <canvas
+        class="emscripten"
+        id="canvas"
+        oncontextmenu="event.preventDefault()"
+        tabindex="-1"
+      ></canvas>
+    </div>
+
+    <script src="./../_CommonFiles/notation.js"></script>
+    <script type="text/javascript">
+      var Module = {
+        FS: {},
+        arguments: [],
+        preRun: [],
+        postRun: [
+          function () {
+            // ------------------- Initialize ODA lib ----------------
+            Module.canvas = document.querySelector("canvas");
+            const {
+              Services,
+              odInitialize,
+              odUninitialize,
+              OdCmColor,
+              OdDb3dSolid,
+              OdDbBlockTableRecord,
+              OdString,
+              OdWrFileBuf,
+              OdDb2dPolyline,
+              OdGePoint3d,
+              OdDb2dVertex,
+              OdGsDCRect,
+            } = Module;
+
+            function fillPolyline2d(p2dPl, x, y, width1, width2, bBTR) {
+              var deltaX = 10;
+              var deltaY = 10;
+              for (let i = 0; i < 7; i++) {
+                var buf = 0;
+                var pos = new OdGePoint3d();
+                pos.x = x;
+                pos.y = y;
+                const pVertex2d = OdDb2dVertex.createObject();
+                pVertex2d.setDatabaseDefaults(bBTR.database(), true);
+                pVertex2d.setPosition(pos);
+                pVertex2d.setStartWidth(width1);
+                pVertex2d.setEndWidth(width2);
+                p2dPl.appendVertex(pVertex2d);
+                x += deltaX;
+                y += deltaY;
+                deltaY *= -1;
+                buf = width1;
+                width1 = width2;
+                width2 = buf;
+                pos.delete();
+                pVertex2d.delete();
+              }
+            }
+            const services = new Services();
+            services.initialize();
+            let pDb = services.createDatabase();
+            const obj = pDb
+              .getModelSpaceId()
+              .safeOpenObject(OpenMode.kForWrite, false);
+            const pRecord = OdDbBlockTableRecord.cast(obj);
+            obj.delete();
+            const pPline2dSimple = OdDb2dPolyline.createObject();
+            pPline2dSimple.setDatabaseDefaults(pDb, true);
+            pRecord.appendOdDbEntity(pPline2dSimple);
+
+            fillPolyline2d(pPline2dSimple, 0, 40, 0.2, 1.0, pRecord);
+
+            const pVertIt = pPline2dSimple.vertexIterator();
+            pVertIt.start(true, true);
+            pVertIt.step(true, true);
+            const vertexId = pVertIt.objectId();
+            const vertex = pPline2dSimple.openVertex(
+              vertexId,
+              OpenMode.kForWrite,
+              false
+            );
+            vertex.setBulge(0.5);
+            pPline2dSimple.makeClosed();
+            pPline2dSimple.setThickness(2);
+
+            pVertIt.delete();
+            vertex.delete();
+            pPline2dSimple.delete();
+            pRecord.delete();
+
+            var cadCore = new Module.CadCore();
+            cadCore.createDevice();
+            cadCore.setDb(pDb);
+            Module.canvas.height = Module.canvas.clientHeight;
+            Module.canvas.width = Module.canvas.clientWidth;
+            cadCore.Resize(Module.canvas.width, Module.canvas.height);
+            cadCore.ZoomExtents();
+            cadCore.Update();
+            pDb.delete();
+            services.uninitialize();
+          },
+        ],
+      };
+    </script>
+    <script async type="text/javascript" src="/DrawingWeb.js"></script>
+  </body>
+</html>
