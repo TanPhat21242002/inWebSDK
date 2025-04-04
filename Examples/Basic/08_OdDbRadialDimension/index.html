@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>OdDbRadialDimension</title>
+    <style>
+      body {
+        font-family: arial;
+        margin: 0;
+        padding: none;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100vw;
+      }
+      .canvas-holder {
+        flex-grow: 1;
+        overflow: hidden;
+      }
+
+      /* the canvas *must not* have any border or padding, or mouse coords will be wrong */
+      canvas.emscripten {
+        border: 0px none;
+        background-color: black;
+        width: 100%;
+        height: 100%;
+        box-sizing: border-box;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="canvas-holder">
+      <canvas
+        class="emscripten"
+        id="canvas"
+        oncontextmenu="event.preventDefault()"
+        tabindex="-1"
+      ></canvas>
+    </div>
+
+    <script src="./../_CommonFiles/notation.js"></script>
+    <script type="text/javascript">
+      var Module = {
+        FS: {},
+        arguments: [],
+        preRun: [],
+        postRun: [
+          function () {
+            function OpenAs(id, type, openMode) {
+              let pObj = id.safeOpenObject(openMode, false);
+              let instance = type.cast(pObj);
+              pObj.delete();
+              return instance;
+            }
+            /************************************************************************/
+            /* Add a Radial Dimension to the specified BlockTableRecord             */
+            /************************************************************************/
+            function createRadialDimension(Module, bBTR) {
+              const {
+                OdGePoint3d,
+                OdString,
+                OdGeVector3d,
+                OdDbCircle,
+                OdDbRadialDimension,
+              } = Module;
+
+              const point = new OdGePoint3d();
+              let h = 2;
+
+              /**********************************************************************/
+              /* Get the lower-left corner of the box                               */
+              /**********************************************************************/
+              point.y -= h;
+
+              /**********************************************************************/
+              /* Create a circle to be dimensioned                                    */
+              /**********************************************************************/
+              //OdDbCirclePtr pCircle
+              const pCircle = OdDbCircle.createObject();
+              pCircle.setDatabaseDefaults(bBTR.database(), false);
+              bBTR.appendOdDbEntity(pCircle);
+              pCircle.setCenter(
+                addVector(
+                  point,
+                  new OdGeVector3d(0.625, (h * 3.0) / 8.0, 0),
+                  new OdGePoint3d()
+                )
+              );
+              pCircle.setRadius(0.5);
+
+              /**********************************************************************/
+              /* Create a Radial Dimension                                         */
+              /**********************************************************************/
+              //OdDbRadialDimensionPtr pDimension
+              const pDimension = OdDbRadialDimension.createObject();
+              pDimension.setDatabaseDefaults(bBTR.database(), false);
+              bBTR.appendOdDbEntity(pDimension);
+
+              pDimension.setCenter(pCircle.center());
+              let chordVector = new OdGeVector3d(pCircle.radius(), 0.0, 0.0);
+              chordVector.rotateBy(
+                OdaToRadian(75.0),
+                new OdGeVector3d(0, 0, 1)
+              );
+              pDimension.setChordPoint(
+                addVector(pDimension.center(), chordVector, new OdGePoint3d())
+              );
+              pDimension.setLeaderLength(0.125);
+              pDimension.useDefaultTextPosition();
+            }
+
+            function addVector(a, b, out) {
+              out.x = a.x + b.x;
+              out.y = a.y + b.y;
+              out.z = a.z + b.z;
+              return out;
+            }
+
+            function OdaToRadian(deg) {
+              return (deg * 3.14159265358979323846) / 180.0;
+            }
+            // ------------------- Initialize ODA lib ----------------
+            Module.canvas = document.querySelector("canvas");
+            const {
+              Services,
+              OdDbBlockTableRecord,
+              OdWrFileBuf,
+              OdString,
+              OdDbText,
+              OdGePoint3d,
+            } = Module;
+
+            const services = new Services();
+            services.initialize();
+            let pDb = services.createDatabase();
+            let modelSpaceId = pDb.getModelSpaceId();
+            const pRecord = OpenAs(
+              modelSpaceId,
+              OdDbBlockTableRecord,
+              OpenMode.kForWrite
+            );
+
+            //createAlignedDimension(Module, pRecord);
+            createRadialDimension(Module, pRecord);
+
+            pRecord.delete();
+
+            var cadCore = new Module.CadCore();
+            cadCore.createDevice();
+            cadCore.setDb(pDb);
+            Module.canvas.height = Module.canvas.clientHeight;
+            Module.canvas.width = Module.canvas.clientWidth;
+            cadCore.Resize(Module.canvas.width, Module.canvas.height);
+            cadCore.ZoomExtents();
+            cadCore.Update();
+            pDb.delete();
+            services.uninitialize();
+          },
+        ],
+      };
+    </script>
+    <script async type="text/javascript" src="/DrawingWeb.js"></script>
+  </body>
+</html>

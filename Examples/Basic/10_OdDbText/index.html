@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>OdDbText</title>
+    <style>
+      body {
+        font-family: arial;
+        margin: 0;
+        padding: none;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100vw;
+      }
+      .canvas-holder {
+        flex-grow: 1;
+        overflow: hidden;
+      }
+
+      /* the canvas *must not* have any border or padding, or mouse coords will be wrong */
+      canvas.emscripten {
+        border: 0px none;
+        background-color: black;
+        width: 100%;
+        height: 100%;
+        box-sizing: border-box;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="canvas-holder">
+      <canvas
+        class="emscripten"
+        id="canvas"
+        oncontextmenu="event.preventDefault()"
+        tabindex="-1"
+      ></canvas>
+    </div>
+
+    <script src="./../_CommonFiles/notation.js"></script>
+    <script type="text/javascript">
+      var Module = {
+        FS: {},
+        arguments: [],
+        preRun: [],
+        postRun: [
+          function () {
+            function OpenAs(id, type, openMode) {
+              let pObj = id.safeOpenObject(openMode, false);
+              let instance = type.cast(pObj);
+              pObj.delete();
+              return instance;
+            }
+
+            /************************************************************************/
+            /* Add a Text Style to the specified database                           */
+            /*                                                                      */
+            /* The symbol table and symbol table record are implicitly closed when  */
+            /* this function returns.                                               */
+            /************************************************************************/
+            function createStyle(
+              Module,
+              styleName,
+              textSize,
+              xScale,
+              priorSize,
+              obliquing,
+              fileName,
+              isShapeFile = false,
+              ttFaceName,
+              bold = false,
+              italic = false,
+              charset = false,
+              pitchAndFamily = 0
+            ) {
+              const { OdDbTextStyleTableRecord } = Module;
+
+              //OdDbTextStyleTableRecordPtr pStyle
+              const pStyle = OdDbTextStyleTableRecord.createObject();
+
+              // Name must be set before a table object is added to a table.  The
+              // isShapeFile flag must also be set (if true) before adding the object
+              // to the database.
+              pStyle.setName(styleName);
+              pStyle.setIsShapeFile(isShapeFile);
+
+              // Set the remaining properties.
+              pStyle.setTextSize(textSize);
+              pStyle.setXScale(xScale);
+              pStyle.setPriorSize(priorSize);
+              pStyle.setObliquingAngle(obliquing);
+              pStyle.setFileName(fileName);
+              if (isShapeFile) {
+                pStyle.setPriorSize(22.45);
+              }
+              if (ttFaceName) {
+                pStyle.setFont(
+                  ttFaceName,
+                  bold,
+                  italic,
+                  charset,
+                  pitchAndFamily
+                );
+              }
+
+              return pStyle;
+            }
+            // ------------------- Initialize ODA lib ----------------
+            Module.canvas = document.querySelector("canvas");
+            const {
+              Services,
+              OdDbBlockTableRecord,
+              OdWrFileBuf,
+              OdString,
+              OdDbText,
+              OdGePoint3d,
+            } = Module;
+
+            const services = new Services();
+            services.initialize();
+            let pDb = services.createDatabase();
+            let modelSpaceId = pDb.getModelSpaceId();
+            const pRecord = OpenAs(
+              modelSpaceId,
+              OdDbBlockTableRecord,
+              OpenMode.kForWrite
+            );
+
+            const pText = OdDbText.createObject();
+            pText.setDatabaseDefaults(pDb, true);
+            const textId = pRecord.appendOdDbEntity(pText);
+            pText.setPosition(new OdGePoint3d(0, 0, 0));
+            pText.setAlignmentPoint(new OdGePoint3d(0, 0, 0));
+            pText.setHeight(10);
+            pText.setWidthFactor(1.0);
+            pText.setTextString(new OdString("TEST TEXT"));
+            pText.setHorizontalMode(TextHorzMode.kTextLeft);
+            pText.setVerticalMode(TextVertMode.kTextBase);
+
+            pRecord.delete();
+
+            var cadCore = new Module.CadCore();
+            cadCore.createDevice()
+            cadCore.setDb(pDb);
+            Module.canvas.height = Module.canvas.clientHeight;
+            Module.canvas.width = Module.canvas.clientWidth;
+            cadCore.Resize(Module.canvas.width, Module.canvas.height);
+            cadCore.ZoomExtents();
+            cadCore.Update();
+
+            pDb.delete();
+            services.uninitialize();
+          },
+        ],
+      };
+    </script>
+    <script async type="text/javascript" src="/DrawingWeb.js"></script>
+  </body>
+</html>

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>FontReplace</title>
+    <style>
+      body {
+        font-family: arial;
+        margin: 0;
+        padding: none;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100vw;
+      }
+
+      .emscripten {
+        padding-right: 0;
+        margin-left: auto;
+        margin-right: auto;
+        display: block;
+      }
+
+      div.emscripten {
+        text-align: center;
+      }
+
+      div.emscripten_border {
+        border: 1px solid black;
+      }
+
+      .canvas-holder {
+        flex-grow: 1;
+        overflow: hidden;
+      }
+
+      /* the canvas *must not* have any border or padding, or mouse coords will be wrong */
+      canvas.emscripten {
+        border: 0px none;
+        background-color: black;
+        width: 100%;
+        height: 100%;
+      }
+
+      #console {
+        position: relative;
+        width: 100%;
+        display: block;
+        bottom: 0;
+        background-color: black;
+        border: 1px solid grey;
+        color: grey;
+        box-sizing: border-box;
+      }
+
+      #output {
+        width: 100%;
+        height: 173px;
+        border-left: 0px;
+        border-right: 0px;
+        padding-left: 0px;
+        padding-right: 0px;
+        display: block;
+        background-color: black;
+        color: white;
+        font-family: "Lucida Console", Monaco, monospace;
+        outline: none;
+        box-sizing: border-box;
+        bottom: 20px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="header">
+      <div class="emscripten_border">
+        <span><label for="file">DWG to upload: </label><input type="file" id="dwg"/></span>
+        <span><label for="file">Font to upload: </label><input type="file" id="font"/></span>
+      </div>
+    </div>
+    <div class="canvas-holder">
+      <canvas
+        class="emscripten"
+        id="canvas"
+        oncontextmenu="event.preventDefault()"
+        tabindex="-1"
+      ></canvas>
+    </div>
+
+    <textarea id="output" rows="8"></textarea>
+    <form>
+      <input id="console" />
+    </form>
+    <script type="text/javascript">
+      var Module = {
+        FS: {},
+        arguments: [],
+        preRun: [],
+        ASSETS_FOLDER: "/assets/",
+        preRun: [
+          function () {
+            if(Module.ASSETS_FOLDER !== "/") FS.mkdir(Module.ASSETS_FOLDER);
+          },
+        ],
+        postRun: [
+          function () {
+
+            function FileToArrayBuffer(file) {
+              return new Promise((resolve) => {
+                var reader = new FileReader();
+                reader.onload = (ev) => resolve(ev.target.result);
+                reader.readAsArrayBuffer(file);
+              });
+            }
+            
+            function OpenFile(name) {
+              var time = Date.now();
+              cadCore.OpenFile(name);
+              Resize();
+              cadCore.ZoomExtents();
+              cadCore.Update();
+              console.log("Time: " + (Date.now() - time));
+              localStorage.setItem("lastFile", name);
+            }
+
+            function Resize(ev) {
+              Module.canvas.height = Module.canvas.clientHeight;
+              Module.canvas.width = Module.canvas.clientWidth;
+
+              cadCore.Resize(Module.canvas.width, Module.canvas.height);
+            }
+
+            function OpenDwgFile(ev) {
+              const file = ev.target.files[0];
+              if (file) {
+                const name = file.name;
+                FileToArrayBuffer(file)
+                  .then((arraybuffer) => new Uint8Array(arraybuffer))
+                  .then((array) => {
+                    const { exists } = FS.analyzePath(
+                      Module.ASSETS_FOLDER + name
+                    );
+                    if (!exists)
+                      Module.FS_createDataFile(
+                        Module.ASSETS_FOLDER,
+                        name,
+                        array,
+                        true,
+                        true,
+                        true
+                      );
+                  })
+                  .then(() => OpenFile(Module.ASSETS_FOLDER + name))
+                  .catch((err) => console.error(err));
+              }
+            };
+
+            function UploadFontFile(ev) {
+              const file = ev.target.files[0];
+              if (file) {
+                const name = file.name;
+                FileToArrayBuffer(file)
+                  .then((arraybuffer) => new Uint8Array(arraybuffer))
+                  .then((array) => {
+                    const folder = Module.ASSETS_FOLDER
+                    const filePath =  folder + name;
+                    const { exists } = FS.analyzePath(filePath);
+                    if (!exists)
+                      return Module.FS_createDataFile(
+                        folder,
+                        name,
+                        array,
+                        true,
+                        true,
+                        true
+                      );
+                  })
+                  .then(() => {
+                    if(/(.ttf|.ttc)$/.test(name)){
+                      cadCore.registerFontFileName(name)
+                    }
+                  })
+                  .then(() => {
+                    var files = document.querySelector("#dwg").files
+                    if(files.length > 0) {
+                      var file = files[0]
+                      OpenFile(Module.ASSETS_FOLDER + file.name)
+                    }
+                  })
+                  .catch((err) => console.error(err));
+              }
+            }
+
+            // ------------------- Initialize ODA lib ----------------
+            Module.canvas = document.querySelector("canvas");
+            var cadCore = new Module.CadCore();
+
+
+           window.onresize = Resize;
+
+            Module.canvas.onwheel = function (ev) {
+              cadCore.Zoom(-ev.deltaY * 0.01, ev.offsetX, ev.offsetY);
+              ev.preventDefault();
+            };
+
+            Module.canvas.onmousedown = function (ev) {
+              if (ev.buttons === 4) {
+                cadCore.ZoomExtents();
+                ev.preventDefault();
+              }
+            };
+
+            Module.canvas.onmousemove = function (ev) {
+              switch (ev.buttons) {
+                case 1:
+                  cadCore.Dolly(ev.movementX, ev.movementY);
+                  break;
+                case 2:
+                  cadCore.Orbit(ev.movementX, ev.movementY);
+                  break;
+                default:
+                  break;
+              }
+            };
+
+            // ---- anim frame
+            function render() {
+              requestAnimationFrame(render);
+              cadCore.Update();
+            }
+            render();
+            // ---- anim frame
+
+            document.querySelector("#dwg").onchange = OpenDwgFile;
+            document.querySelector("#font").onchange = UploadFontFile;
+            // ------------------- END Initialize ODA lib ----------------
+          },
+        ],
+        print: (function () {
+          var element = document.getElementById("output");
+          if (element) element.value = ""; // clear browser cache
+          return function (text) {
+            if (arguments.length > 1)
+              text = Array.prototype.slice.call(arguments).join(" ");
+            console.log(text);
+            if (element) {
+              element.value += text + "\n";
+              element.scrollTop = element.scrollHeight; // focus on bottom
+            }
+          };
+        })(),
+        printErr: function (text) {
+          if (arguments.length > 1)
+            text = Array.prototype.slice.call(arguments).join(" ");
+          console.error(text);
+        },
+       };
+    </script>
+    <script async type="text/javascript" src="/DrawingWeb.js"></script>
+  </body>
+</html>
