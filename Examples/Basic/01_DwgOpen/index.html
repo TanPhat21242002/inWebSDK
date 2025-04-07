@@ -172,6 +172,7 @@
 
       <div class="emscripten_border">
         <input type="file" /><button id="download">Download</button>
+        <button id="drawCircleButton">Draw Circle</button>
       </div>
     </div>
     <div class="canvas-holder">
@@ -221,41 +222,7 @@
             // ------------------- Initialize ODA lib ----------------
             Module.canvas = document.querySelector("canvas");
 
-            var cadCore = new Module.CadCore();
-            // var CmdCircle = new CmdCircle(cadCore);
             //-------------
-
-            function OpenFile(name) {
-              var time = Date.now();
-              cadCore.OpenFile(name);
-              Resize();
-              cadCore.ZoomExtents();
-              cadCore.Update();
-              console.log("Time: " + (Date.now() - time));
-              localStorage.setItem("lastFile", name);
-            }
-            document.getElementById("download").onclick = () => {
-              ReadFile(
-                Module.ASSETS_FOLDER +
-                  "/" +
-                  document.querySelector("input[type='file']").files[0].name
-              );
-            };
-            function ReadFile(name) {
-              debugger;
-              var buf = FS.readFile(name);
-              var blob = new Blob([buf.buffer]);
-              var url = window.URL.createObjectURL(blob);
-              var a = document.createElement("a");
-              a.style.display = "none";
-              a.href = url;
-              a.download = name;
-              document.body.appendChild(a);
-              a.click();
-              window.URL.revokeObjectURL(url);
-              console.log("Downloading start");
-            }
-            //////////////////////////////////////////////////////////////////
 
             const {
               Services,
@@ -274,6 +241,8 @@
               OdGeMatrix3d,
               OdGeTol,
               OdGeVector3d,
+              OdDbAlignedDimension,
+              OdDbObjectIdArray,
             } = Module;
 
             const OpenMode = {
@@ -282,7 +251,96 @@
               kForNotify: 2,
             };
 
-            // /////////////////////////////////////////////////////////////
+            const SaveType = {
+              kDwg: 0,
+              kDxf: 1,
+              kDxb: 2,
+              kUnknown: -1,
+            };
+
+            const DwgVersion = {
+              kDHL_CURRENT: 33,
+              kDHL_2013: 1,
+              kDHL_2018: 2,
+            };
+
+            var cadCore = new Module.CadCore();
+
+            function OpenFile(name) {
+              var time = Date.now();
+              cadCore.OpenFile(name);
+              Resize();
+              cadCore.ZoomExtents();
+              cadCore.Update();
+              console.log("Time: " + (Date.now() - time));
+              localStorage.setItem("lastFile", name);
+            }
+
+            document.getElementById("download").onclick = async () => {
+              await SaveFile();
+              setTimeout(() => {
+                ReadFile(Module.ASSETS_FOLDER + "/Example1.dwg");
+              }, 500);
+            };
+
+            function SaveFile() {
+              const pDb = cadCore.getDb();
+              const f_out = new OdString(
+                Module.ASSETS_FOLDER + "/Example1.dwg"
+              );
+              const fileType = SaveType.kDwg;
+              const outVer = DwgVersion.kDHL_CURRENT;
+              const modelSpaceId = pDb.getModelSpaceId();
+              const modelSpace = modelSpaceId.safeOpenObject(
+                OpenMode.kForRead,
+                false
+              );
+              const record = OdDbBlockTableRecord.cast(modelSpace);
+              const iterator = record.newIterator(true, true, false);
+              let entityCount = 0;
+              while (!iterator.done()) {
+                entityCount++;
+                iterator.step(true, true);
+              }
+              try {
+                let checkValue = pDb.writeFile1(
+                  f_out,
+                  fileType,
+                  outVer,
+                  false,
+                  16
+                );
+                const filePath = Module.ASSETS_FOLDER + "/Example1.dwg";
+                const { exists } = FS.analyzePath(filePath);
+                if (!exists) {
+                  const fileData = new Uint8Array(0);
+                  Module.FS_createDataFile(
+                    Module.ASSETS_FOLDER,
+                    "Example1.dwg",
+                    fileData,
+                    true,
+                    true,
+                    true
+                  );
+                }
+              } catch (e) {
+                console.error("Error saving DWG file:", e);
+              }
+            }
+
+            function ReadFile(name) {
+              var buf = FS.readFile(name);
+              var blob = new Blob([buf.buffer]);
+              var url = window.URL.createObjectURL(blob);
+              var a = document.createElement("a");
+              a.style.display = "none";
+              a.href = url;
+              a.download = name;
+              document.body.appendChild(a);
+              a.click();
+              window.URL.revokeObjectURL(url);
+              console.log("Downloading start");
+            }
 
             function Resize(ev) {
               Module.canvas.height = Module.canvas.clientHeight;
@@ -300,41 +358,53 @@
             let firstPoint = null;
             let secondPoint = null;
             let tempCircle = null;
+            let arraytemp = [];
+            let tempDimension = null;
+            let tempLine = null;
 
             Module.canvas.onmousedown = function (ev) {
               if (ev.buttons === 4) {
                 cadCore.ZoomExtents();
                 ev.preventDefault();
               }
-              if (ev.buttons === 1) {
-                const rect = Module.canvas.getBoundingClientRect();
-                const x = ev.offsetX;
-                const y = ev.offsetY;
-                if (!firstPoint) {
-                  firstPoint = { x, y };
-                  console.log("First point selected:", firstPoint);
-                  Module.canvas.addEventListener("mousemove", onMouseMove);
-                } else {
-                  secondPoint = { x, y };
-                  console.log("Second point selected:", secondPoint);
-                  // drawCircle(firstPoint, secondPoint, cadCore);
-                  drawCircle(firstPoint, { x, y }, cadCore);
-                  Module.canvas.removeEventListener("mousemove", onMouseMove);
-                  firstPoint = null;
-                  secondPoint = null;
+            };
+
+            document
+              .getElementById("drawCircleButton")
+              .addEventListener("click", function () {
+                Module.canvas.addEventListener("click", onCanvasClick);
+              });
+
+            function onCanvasClick(ev) {
+              const pDb = cadCore.getDb();
+              const x = ev.offsetX;
+              const y = ev.offsetY;
+              if (!firstPoint) {
+                firstPoint = { x, y };
+                Module.canvas.addEventListener("mousemove", onMouseMove);
+              } else {
+                secondPoint = { x, y };
+                drawCircle(firstPoint, secondPoint, cadCore);
+                let lastElement = arraytemp.at(-1);
+                lastElement.erase(true);
+                Module.canvas.removeEventListener("mousemove", onMouseMove);
+                if (tempCircle) {
+                  const obj = pDb
+                    .getModelSpaceId()
+                    .safeOpenObject(OpenMode.kForWrite, false);
+                  const Record = OdDbBlockTableRecord.cast(obj);
                   tempCircle = null;
                 }
-                ev.preventDefault();
+                firstPoint = null;
+                secondPoint = null;
+                Module.canvas.removeEventListener("click", onCanvasClick);
               }
-            };
+            }
 
             function onMouseMove(ev) {
               if (!firstPoint) return;
-
               const x = ev.offsetX;
               const y = ev.offsetY;
-
-              // Cập nhật vòng tròn tạm thời
               drawTempCircle(firstPoint, { x, y }, cadCore);
             }
 
@@ -343,46 +413,102 @@
               const device = cadCore.getDevice();
               const view = device.viewAt(0);
 
-              const first = screenToWorld(view, p1.x, p1.y);
-              const second = screenToWorld(view, p2.x, p2.y);
+              const center = screenToWorld(view, p1.x, p1.y);
+              const edge = screenToWorld(view, p2.x, p2.y);
+              if (!center || !edge) return;
 
-              const centerX = (first.x + second.x) / 2;
-              const centerY = (first.y + second.y) / 2;
-              const radius =
-                Math.sqrt(
-                  Math.pow(second.x - first.x, 2) +
-                    Math.pow(second.y - first.y, 2)
-                ) / 2;
-
+              const radius = Math.sqrt(
+                Math.pow(edge.x - center.x, 2) + Math.pow(edge.y - center.y, 2)
+              );
+              const obj = pDb
+                .getModelSpaceId()
+                .safeOpenObject(OpenMode.kForWrite, false);
+              const Record = OdDbBlockTableRecord.cast(obj);
               if (tempCircle) {
-                // Nếu đã có vòng tròn tạm thời, chỉ cần cập nhật nó
-                tempCircle.setCenter(new OdGePoint3d(centerX, centerY, 0));
+                tempCircle.setCenter(new OdGePoint3d(center.x, center.y, 0));
                 tempCircle.setRadius(radius);
               } else {
-                // Nếu chưa có, tạo mới vòng tròn tạm thời
                 tempCircle = OdDbCircle.createObject();
                 tempCircle.setDatabaseDefaults(pDb, true);
-                tempCircle.setCenter(new OdGePoint3d(centerX, centerY, 0));
+                tempCircle.setCenter(new OdGePoint3d(center.x, center.y, 0));
                 tempCircle.setRadius(radius);
-
-                const blue = new OdCmColor();
-                blue.setRGB(0, 0, 255);
-                tempCircle.setColor(blue, true);
-
-                const obj = pDb
-                  .getModelSpaceId()
-                  .safeOpenObject(OpenMode.kForWrite, false);
-                const Record = OdDbBlockTableRecord.cast(obj);
-                Record.appendOdDbEntity(tempCircle);
+                const red = new OdCmColor();
+                red.setRGB(255, 0, 0);
+                tempCircle.setColor(red, true);
+                const tempID = Record.appendOdDbEntity(tempCircle);
+                const tempEntity = tempID.safeOpenObject(
+                  OpenMode.kForWrite,
+                  false
+                );
+                if (tempID && !tempID.isNull()) {
+                  const tempEntity = tempID.safeOpenObject(
+                    OpenMode.kForWrite,
+                    false
+                  );
+                  if (tempEntity) {
+                    arraytemp.push(tempEntity);
+                  }
+                }
               }
+
+              // createAlignedDimension(Module, Record, center, edge);
+
               cadCore.createDevice();
               cadCore.setDb(pDb);
               cadCore.Resize(
                 Module.canvas.clientWidth,
                 Module.canvas.clientHeight
               );
-              cadCore.ZoomExtents();
+              // cadCore.ZoomExtents();
               cadCore.Update();
+            }
+
+            function createAlignedDimension(
+              Module,
+              bBTR,
+              center,
+              edge,
+              dimStyleId
+            ) {
+              const { OdGePoint3d, OdDbLine, OdDbAlignedDimension } = Module;
+
+              let line1Pt = new OdGePoint3d(center.x, center.y, 0);
+              let line2Pt = new OdGePoint3d(edge.x, edge.y, 0);
+              let dimLinePt = new OdGePoint3d(
+                center.x + (edge.x - center.x) * 1.2,
+                center.y + (edge.y - center.y) * 1.2,
+                0
+              );
+
+              if (!tempDimension) {
+                tempDimension = OdDbAlignedDimension.createObject();
+                tempDimension.setDatabaseDefaults(bBTR.database(), false);
+                bBTR.appendOdDbEntity(tempDimension);
+
+                tempLine = OdDbLine.createObject();
+                tempLine.setDatabaseDefaults(bBTR.database(), false);
+                bBTR.appendOdDbEntity(tempLine);
+              }
+
+              tempDimension.setXLine1Point(line1Pt);
+              tempDimension.setXLine2Point(line2Pt);
+              tempDimension.setDimLinePoint(dimLinePt);
+              tempDimension.useDefaultTextPosition();
+              tempDimension.setJogSymbolHeight(1.5);
+
+              if (dimStyleId) {
+                tempDimension.setDimensionStyle(dimStyleId);
+              }
+
+              tempLine.setStartPoint(line1Pt);
+              tempLine.setEndPoint(line2Pt);
+            }
+
+            function addVector(a, b, out) {
+              out.x = a.x + b.x;
+              out.y = a.y + b.y;
+              out.z = a.z + b.z;
+              return out;
             }
 
             function drawCircle(p1, p2, cadCore) {
@@ -393,20 +519,16 @@
               const device = cadCore.getDevice();
               const view = device.viewAt(0);
 
-              const first = screenToWorld(view, p1.x, p1.y);
-              const second = screenToWorld(view, p2.x, p2.y);
+              const center = screenToWorld(view, p1.x, p1.y);
+              const edge = screenToWorld(view, p2.x, p2.y);
 
-              const centerX = (first.x + second.x) / 2;
-              const centerY = (first.y + second.y) / 2;
-              const radius =
-                Math.sqrt(
-                  Math.pow(second.x - first.x, 2) +
-                    Math.pow(second.y - first.y, 2)
-                ) / 2;
+              const radius = Math.sqrt(
+                Math.pow(edge.x - center.x, 2) + Math.pow(edge.y - center.y, 2)
+              );
 
               const pCircle = OdDbCircle.createObject();
               pCircle.setDatabaseDefaults(pDb, true);
-              pCircle.setCenter(new OdGePoint3d(centerX, centerY, 0));
+              pCircle.setCenter(new OdGePoint3d(center.x, center.y, 0));
               pCircle.setRadius(radius);
 
               const red = new OdCmColor();
@@ -417,112 +539,50 @@
                 .getModelSpaceId()
                 .safeOpenObject(OpenMode.kForWrite, false);
               const Record = OdDbBlockTableRecord.cast(obj);
-              Record.appendOdDbEntity(pCircle);
-
+              let checkValue = Record.appendOdDbEntity(pCircle);
+              const iterator = Record.newIterator(true, true, false);
+              let entityCount = 0;
+              while (!iterator.done()) {
+                entityCount++;
+                iterator.step(true, true);
+              }
               cadCore.createDevice();
               cadCore.setDb(pDb);
               cadCore.Resize(
                 Module.canvas.clientWidth,
                 Module.canvas.clientHeight
               );
-              cadCore.ZoomExtents();
+              // cadCore.ZoomExtents();
               cadCore.Update();
 
               services.uninitialize();
             }
 
-            // function drawCircle(p1, p2, cadCore) {
-            //   const services = new Services();
-            //   services.initialize();
-            //   const pDb = cadCore.getDb();
-
-            //   // Lấy tọa độ trong không gian CAD từ điểm nhấp chuột trên canvas
-            //   const device = cadCore.getDevice();
-            //   const view = device.viewAt(0);
-
-            //   const halfSize = 2; // Kích thước vùng chọn nhỏ
-            //   const first = screenToWorld(
-            //     view,
-            //     p1.x + halfSize,
-            //     p1.y + halfSize
-            //   );
-            //   const second = screenToWorld(
-            //     view,
-            //     p2.x - halfSize,
-            //     p2.y - halfSize
-            //   );
-
-            //   // Tạo hình tròn với các điểm đã chọn
-            //   const centerX = (first.x + second.x) / 2;
-            //   const centerY = (first.y + second.y) / 2;
-            //   const radius =
-            //     Math.sqrt(
-            //       Math.pow(second.x - first.x, 2) +
-            //         Math.pow(second.y - first.y, 2)
-            //     ) / 2;
-
-            //   const pCircle = OdDbCircle.createObject();
-            //   pCircle.setDatabaseDefaults(pDb, true);
-            //   pCircle.setCenter(new OdGePoint3d(centerX, centerY, 0));
-            //   pCircle.setRadius(radius);
-            //   const red = new OdCmColor();
-            //   red.setRGB(255, 0, 0);
-            //   pCircle.setColor(red, true);
-
-            //   const obj = pDb
-            //     .getModelSpaceId()
-            //     .safeOpenObject(OpenMode.kForWrite, false);
-            //   const Record = OdDbBlockTableRecord.cast(obj);
-            //   Record.appendOdDbEntity(pCircle);
-
-            //   cadCore.createDevice();
-            //   cadCore.setDb(pDb);
-            //   cadCore.Resize(
-            //     Module.canvas.clientWidth,
-            //     Module.canvas.clientHeight
-            //   );
-            //   cadCore.ZoomExtents();
-            //   pDb.delete();
-            //   cadCore.Update();
-
-            //   services.uninitialize();
-            // }
-
-            function screenToWorld(pGsView, x, y) {
-              // Tạo điểm trong không gian màn hình (x, y)
+            const screenToWorld = (view, x, y) => {
+              if (!view) return null;
               const point = new OdGePoint3d(x, y, 0);
-              // Chuyển đổi điểm từ không gian màn hình sang không gian 3D
+              const pGsView = view;
               point.transformBy(
-                pGsView
-                  .screenMatrix()
-                  .mul(pGsView.projectionMatrix()) // Kết hợp ma trận chiếu và ma trận màn hình
-                  .inverse() // Lấy ma trận nghịch đảo để chuyển đổi từ không gian màn hình sang không gian thế giới
+                pGsView.screenMatrix().mul(pGsView.projectionMatrix()).inverse()
               );
-
-              // Tạo ma trận chuyển hệ tọa độ từ không gian mắt (eye space) sang không gian thế giới
+              point.z = 0;
               const xEyeToWorld = new OdGeMatrix3d();
-
-              // Vectơ đơn vị theo hướng y và z
               let yVector = pGsView.upVector().normalize(new OdGeTol(1e-10));
               let zVector = pGsView
                 .position()
                 .asVector()
                 .sub(pGsView.target().asVector())
                 .normalize(new OdGeTol(1e-10));
-              let xVector = yVector.crossProduct(zVector); // Vectơ x là kết quả của tích chéo của y và z
-
-              // Thiết lập hệ tọa độ mới với điểm gốc là pGsView.target() và các vectơ x, y, z
+              let xVector = yVector.crossProduct(zVector);
               xEyeToWorld.setCoordSystem(
                 pGsView.target(),
                 xVector,
                 yVector,
                 zVector
               );
-
-              // Áp dụng ma trận hệ tọa độ thế giới để biến đổi điểm từ không gian mắt sang không gian thế giới
               point.transformBy(xEyeToWorld);
               return point;
-            }
+            };
 
             Module.canvas.onmousemove = function (ev) {
               switch (ev.buttons) {
