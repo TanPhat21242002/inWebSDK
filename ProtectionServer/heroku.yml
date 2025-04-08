@@ -2,5 +2,4 @@ build:
   docker:
     web: Dockerfile
 run:
-  web: dotnet InWeb.FileProtectionServer.dll --urls "http://0.0.0.0:$PORT"
-# Force Docker build
+  web: sh -c "ASPNETCORE_URLS=http://0.0.0.0:$PORT dotnet InWeb.FileProtectionServer.dll"
