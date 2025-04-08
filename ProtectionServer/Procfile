@@ -1,0 +1,1 @@
+web: dotnet InWeb.FileProtectionServer.dll --urls "http://0.0.0.0:$PORT"
