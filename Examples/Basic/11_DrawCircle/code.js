@@ -51,6 +51,7 @@ var Module = {
                 OdGeVector3d,
                 OdDbAlignedDimension,
                 OdDbObjectIdArray,
+                OdDbObject,
             } = Module;
 
             const OpenMode = {
@@ -84,11 +85,40 @@ var Module = {
                 localStorage.setItem("lastFile", name);
             }
 
-            document.getElementById("download").onclick = async () => {
-                await SaveFile();
-                setTimeout(() => {
-                    ReadFile(Module.ASSETS_FOLDER + "/Example1.dwg");
-                }, 500);
+            document.getElementById("download").onclick = () => {
+                ReadFile(Module.ASSETS_FOLDER + "/Example1.dwg");
+            };
+
+            document.getElementById('saveButton').onclick = function () {
+                SaveFile();
+            };
+
+            document.getElementById("newFileButton").onclick = function () {
+                const newFileName = Module.ASSETS_FOLDER + "/Example1.dwg";
+                try {
+                    var cadCore = new Module.CadCore();
+                    const pDb = cadCore.getDb();
+                    const f_out = new OdString(newFileName);
+                    const fileType = SaveType.kDwg;
+                    const outVer = DwgVersion.kDHL_CURRENT;
+                    pDb.writeFile1(f_out, fileType, outVer, false, 16);
+                    const { exists } = FS.analyzePath(newFileName);
+                    if (!exists) {
+                        const fileData = new Uint8Array(0);
+                        Module.FS_createDataFile(
+                            Module.ASSETS_FOLDER,
+                            "Example1.dwg",
+                            fileData,
+                            true,
+                            true,
+                            true
+                        );
+                    }
+
+                    OpenFile(newFileName);
+                } catch (e) {
+                    console.error("Error creating new DWG file:", e);
+                }
             };
 
             function SaveFile() {
@@ -96,28 +126,10 @@ var Module = {
                 const f_out = new OdString(
                     Module.ASSETS_FOLDER + "/Example1.dwg"
                 );
-                const fileType = SaveType.kDwg;
-                const outVer = DwgVersion.kDHL_CURRENT;
-                const modelSpaceId = pDb.getModelSpaceId();
-                const modelSpace = modelSpaceId.safeOpenObject(
-                    OpenMode.kForRead,
-                    false
-                );
-                const record = OdDbBlockTableRecord.cast(modelSpace);
-                const iterator = record.newIterator(true, true, false);
-                let entityCount = 0;
-                while (!iterator.done()) {
-                    entityCount++;
-                    iterator.step(true, true);
-                }
                 try {
-                    let checkValue = pDb.writeFile1(
-                        f_out,
-                        fileType,
-                        outVer,
-                        false,
-                        16
-                    );
+
+                    pDb.save1(
+                        f_out, false);
                     const filePath = Module.ASSETS_FOLDER + "/Example1.dwg";
                     const { exists } = FS.analyzePath(filePath);
                     if (!exists) {
@@ -166,8 +178,6 @@ var Module = {
             let firstPoint = null;
             let secondPoint = null;
             let tempCircle = null;
-            let arraytemp = [];
-            let tempDimension = null;
             let tempLine = null;
 
             Module.canvas.onmousedown = function (ev) {
@@ -184,7 +194,6 @@ var Module = {
                 });
 
             function onCanvasClick(ev) {
-                const pDb = cadCore.getDb();
                 const x = ev.offsetX;
                 const y = ev.offsetY;
                 if (!firstPoint) {
@@ -192,19 +201,15 @@ var Module = {
                     Module.canvas.addEventListener("mousemove", onMouseMove);
                 } else {
                     secondPoint = { x, y };
-                    drawCircle(firstPoint, secondPoint, cadCore);
-                    let lastElement = arraytemp.at(-1);
-                    lastElement.erase(true);
-                    Module.canvas.removeEventListener("mousemove", onMouseMove);
+                    const lineobj = OdDbObject.cast(tempLine);
+                    lineobj.erase(true);
+                    tempLine = null;
                     if (tempCircle) {
-                        const obj = pDb
-                            .getModelSpaceId()
-                            .safeOpenObject(OpenMode.kForWrite, false);
-                        const Record = OdDbBlockTableRecord.cast(obj);
                         tempCircle = null;
                     }
                     firstPoint = null;
                     secondPoint = null;
+                    Module.canvas.removeEventListener("mousemove", onMouseMove);
                     Module.canvas.removeEventListener("click", onCanvasClick);
                 }
             }
@@ -253,31 +258,19 @@ var Module = {
                             OpenMode.kForWrite,
                             false
                         );
-                        if (tempEntity) {
-                            arraytemp.push(tempEntity);
-                        }
                     }
                 }
-
-                // createAlignedDimension(Module, Record, center, edge);
-
+                createAlignedDimension(Module, Record, center, edge);
                 cadCore.createDevice();
                 cadCore.setDb(pDb);
                 cadCore.Resize(
                     Module.canvas.clientWidth,
                     Module.canvas.clientHeight
                 );
-                // cadCore.ZoomExtents();
                 cadCore.Update();
             }
 
-            function createAlignedDimension(
-                Module,
-                bBTR,
-                center,
-                edge,
-                dimStyleId
-            ) {
+            function createAlignedDimension(Module, bBTR, center, edge) {
                 const { OdGePoint3d, OdDbLine, OdDbAlignedDimension } = Module;
 
                 let line1Pt = new OdGePoint3d(center.x, center.y, 0);
@@ -288,82 +281,17 @@ var Module = {
                     0
                 );
 
-                if (!tempDimension) {
-                    tempDimension = OdDbAlignedDimension.createObject();
-                    tempDimension.setDatabaseDefaults(bBTR.database(), false);
-                    bBTR.appendOdDbEntity(tempDimension);
-
+                if (tempLine) {
+                    tempLine.setStartPoint(line1Pt);
+                    tempLine.setEndPoint(line2Pt);
+                    const blue = new OdCmColor();
+                    blue.setRGB(0, 0, 255);
+                    tempLine.setColor(blue, true);
+                } else {
                     tempLine = OdDbLine.createObject();
                     tempLine.setDatabaseDefaults(bBTR.database(), false);
                     bBTR.appendOdDbEntity(tempLine);
                 }
-
-                tempDimension.setXLine1Point(line1Pt);
-                tempDimension.setXLine2Point(line2Pt);
-                tempDimension.setDimLinePoint(dimLinePt);
-                tempDimension.useDefaultTextPosition();
-                tempDimension.setJogSymbolHeight(1.5);
-
-                if (dimStyleId) {
-                    tempDimension.setDimensionStyle(dimStyleId);
-                }
-
-                tempLine.setStartPoint(line1Pt);
-                tempLine.setEndPoint(line2Pt);
-            }
-
-            function addVector(a, b, out) {
-                out.x = a.x + b.x;
-                out.y = a.y + b.y;
-                out.z = a.z + b.z;
-                return out;
-            }
-
-            function drawCircle(p1, p2, cadCore) {
-                const services = new Services();
-                services.initialize();
-                const pDb = cadCore.getDb();
-
-                const device = cadCore.getDevice();
-                const view = device.viewAt(0);
-
-                const center = screenToWorld(view, p1.x, p1.y);
-                const edge = screenToWorld(view, p2.x, p2.y);
-
-                const radius = Math.sqrt(
-                    Math.pow(edge.x - center.x, 2) + Math.pow(edge.y - center.y, 2)
-                );
-
-                const pCircle = OdDbCircle.createObject();
-                pCircle.setDatabaseDefaults(pDb, true);
-                pCircle.setCenter(new OdGePoint3d(center.x, center.y, 0));
-                pCircle.setRadius(radius);
-
-                const red = new OdCmColor();
-                red.setRGB(255, 0, 0);
-                pCircle.setColor(red, true);
-
-                const obj = pDb
-                    .getModelSpaceId()
-                    .safeOpenObject(OpenMode.kForWrite, false);
-                const Record = OdDbBlockTableRecord.cast(obj);
-                let checkValue = Record.appendOdDbEntity(pCircle);
-                const iterator = Record.newIterator(true, true, false);
-                let entityCount = 0;
-                while (!iterator.done()) {
-                    entityCount++;
-                    iterator.step(true, true);
-                }
-                cadCore.createDevice();
-                cadCore.setDb(pDb);
-                cadCore.Resize(
-                    Module.canvas.clientWidth,
-                    Module.canvas.clientHeight
-                );
-                // cadCore.ZoomExtents();
-                cadCore.Update();
-
-                services.uninitialize();
             }
 
             const screenToWorld = (view, x, y) => {
@@ -416,9 +344,10 @@ var Module = {
             document.querySelector("input[type='file']").onchange = function (
                 ev
             ) {
+                var cadCore = new Module.CadCore();
                 const file = ev.target.files[0];
                 if (file) {
-                    const name = file.name;
+                    const name = 'Example1.dwg';
                     FileToArrayBuffer(file)
                         .then((arraybuffer) => new Uint8Array(arraybuffer))
                         .then((array) => {
