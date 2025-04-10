@@ -226,6 +226,7 @@ var Module = {
                 const device = cadCore.getDevice();
                 const view = device.viewAt(0);
 
+                //dư
                 const center = screenToWorld(view, p1.x, p1.y);
                 const edge = screenToWorld(view, p2.x, p2.y);
                 if (!center || !edge) return;
@@ -238,9 +239,14 @@ var Module = {
                     .safeOpenObject(OpenMode.kForWrite, false);
                 const Record = OdDbBlockTableRecord.cast(obj);
                 if (tempCircle) {
+                    //get center
+                    //recalculate radius
+
                     tempCircle.setCenter(new OdGePoint3d(center.x, center.y, 0));
                     tempCircle.setRadius(radius);
                 } else {
+                    //Transfer p1 to center
+
                     tempCircle = OdDbCircle.createObject();
                     tempCircle.setDatabaseDefaults(pDb, true);
                     tempCircle.setCenter(new OdGePoint3d(center.x, center.y, 0));
