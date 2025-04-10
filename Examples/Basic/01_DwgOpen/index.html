@@ -172,6 +172,7 @@
 
       <div class="emscripten_border">
         <input type="file" /><button id="download">Download</button>
+        <button id="drawCircleButton">Draw Circle</button>
       </div>
     </div>
     <div class="canvas-holder">
@@ -274,6 +275,8 @@
               OdGeMatrix3d,
               OdGeTol,
               OdGeVector3d,
+              OdDbAlignedDimension,
+              OdDbObjectIdArray,
             } = Module;
 
             const OpenMode = {
@@ -281,8 +284,6 @@
               kForWrite: 1,
               kForNotify: 2,
             };
-
-            // /////////////////////////////////////////////////////////////
 
             function Resize(ev) {
               Module.canvas.height = Module.canvas.clientHeight;

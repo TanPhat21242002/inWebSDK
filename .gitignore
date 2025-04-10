@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+examples/react/node_modules/
+
+# Build output
+build/
+examples/react/build/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+examples/react/.env
+
+# Editor directories and files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Miscellaneous
+.DS_Store
+Thumbs.db
+
+.vs
