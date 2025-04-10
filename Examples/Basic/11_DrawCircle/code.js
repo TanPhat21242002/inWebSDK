@@ -33,25 +33,15 @@ var Module = {
             //-------------
 
             const {
-                Services,
-                odlnitialize,
-                odUninitialize,
-                odCmColor,
-                OdDb3dSolid,
-                OdDbBlockTablcRccord,
                 OdString,
-                OdWrFileBuf,
                 OdDbCircle,
                 OdGePoint3d,
-                OdDbObjectId,
                 OdCmColor,
                 OdDbBlockTableRecord,
                 OdGeMatrix3d,
                 OdGeTol,
-                OdGeVector3d,
-                OdDbAlignedDimension,
-                OdDbObjectIdArray,
                 OdDbObject,
+                OdDbLine,
             } = Module;
 
             const OpenMode = {
@@ -190,104 +180,81 @@ var Module = {
             document
                 .getElementById("drawCircleButton")
                 .addEventListener("click", function () {
-                    Module.canvas.addEventListener("click", onCanvasClick);
+                    Module.canvas.addEventListener("click", onCanvasClickCircle);
                 });
 
-            function onCanvasClick(ev) {
+            function onCanvasClickCircle(ev) {
                 const x = ev.offsetX;
                 const y = ev.offsetY;
                 if (!firstPoint) {
                     firstPoint = { x, y };
-                    Module.canvas.addEventListener("mousemove", onMouseMove);
+                    Module.canvas.addEventListener("mousemove", onMouseMoveCircle);
                 } else {
                     secondPoint = { x, y };
-                    const lineobj = OdDbObject.cast(tempLine);
-                    lineobj.erase(true);
-                    tempLine = null;
+                    if (tempLine) {
+                        const lineobj = OdDbObject.cast(tempLine);
+                        lineobj.erase(true);
+                        tempLine = null;
+                    }
                     if (tempCircle) {
                         tempCircle = null;
                     }
                     firstPoint = null;
                     secondPoint = null;
-                    Module.canvas.removeEventListener("mousemove", onMouseMove);
-                    Module.canvas.removeEventListener("click", onCanvasClick);
+                    Module.canvas.removeEventListener("mousemove", onMouseMoveCircle);
+                    Module.canvas.removeEventListener("click", onCanvasClickCircle);
                 }
             }
 
-            function onMouseMove(ev) {
+            function onMouseMoveCircle(ev) {
                 if (!firstPoint) return;
                 const x = ev.offsetX;
                 const y = ev.offsetY;
                 drawTempCircle(firstPoint, { x, y }, cadCore);
             }
 
+            let centerCircle = null;
             function drawTempCircle(p1, p2, cadCore) {
                 const pDb = cadCore.getDb();
                 const device = cadCore.getDevice();
                 const view = device.viewAt(0);
-
-                //dư
-                const center = screenToWorld(view, p1.x, p1.y);
                 const edge = screenToWorld(view, p2.x, p2.y);
-                if (!center || !edge) return;
 
-                const radius = Math.sqrt(
-                    Math.pow(edge.x - center.x, 2) + Math.pow(edge.y - center.y, 2)
-                );
                 const obj = pDb
                     .getModelSpaceId()
                     .safeOpenObject(OpenMode.kForWrite, false);
                 const Record = OdDbBlockTableRecord.cast(obj);
                 if (tempCircle) {
-                    //get center
-                    //recalculate radius
-
-                    tempCircle.setCenter(new OdGePoint3d(center.x, center.y, 0));
+                    const radius = Math.sqrt(
+                        Math.pow(edge.x - centerCircle.x, 2) + Math.pow(edge.y - centerCircle.y, 2)
+                    );
+                    tempCircle.setCenter(new OdGePoint3d(centerCircle.x, centerCircle.y, 0));
                     tempCircle.setRadius(radius);
                 } else {
-                    //Transfer p1 to center
-
+                    centerCircle = screenToWorld(view, p1.x, p1.y);
+                    const radius = Math.sqrt(
+                        Math.pow(edge.x - centerCircle.x, 2) + Math.pow(edge.y - centerCircle.y, 2)
+                    );
                     tempCircle = OdDbCircle.createObject();
                     tempCircle.setDatabaseDefaults(pDb, true);
-                    tempCircle.setCenter(new OdGePoint3d(center.x, center.y, 0));
+                    tempCircle.setCenter(new OdGePoint3d(centerCircle.x, centerCircle.y, 0));
                     tempCircle.setRadius(radius);
                     const red = new OdCmColor();
                     red.setRGB(255, 0, 0);
                     tempCircle.setColor(red, true);
-                    const tempID = Record.appendOdDbEntity(tempCircle);
-                    const tempEntity = tempID.safeOpenObject(
-                        OpenMode.kForWrite,
-                        false
-                    );
-                    if (tempID && !tempID.isNull()) {
-                        const tempEntity = tempID.safeOpenObject(
-                            OpenMode.kForWrite,
-                            false
-                        );
-                    }
+                    Record.appendOdDbEntity(tempCircle);
                 }
-                createAlignedDimension(Module, Record, center, edge);
+                createLine(Record, centerCircle, edge);
                 cadCore.createDevice();
                 cadCore.setDb(pDb);
-                cadCore.Resize(
-                    Module.canvas.clientWidth,
-                    Module.canvas.clientHeight
-                );
+                Resize();
                 cadCore.Update();
             }
 
-            function createAlignedDimension(Module, bBTR, center, edge) {
-                const { OdGePoint3d, OdDbLine, OdDbAlignedDimension } = Module;
-
-                let line1Pt = new OdGePoint3d(center.x, center.y, 0);
-                let line2Pt = new OdGePoint3d(edge.x, edge.y, 0);
-                let dimLinePt = new OdGePoint3d(
-                    center.x + (edge.x - center.x) * 1.2,
-                    center.y + (edge.y - center.y) * 1.2,
-                    0
-                );
-
+            function createLine(bBTR, centerCircle, edge) {
                 if (tempLine) {
+                    let line1Pt = new OdGePoint3d(centerCircle.x, centerCircle.y, 0);
+                    let line2Pt = new OdGePoint3d(edge.x, edge.y, 0);
                     tempLine.setStartPoint(line1Pt);
                     tempLine.setEndPoint(line2Pt);
                     const blue = new OdCmColor();
@@ -350,7 +317,6 @@ var Module = {
             document.querySelector("input[type='file']").onchange = function (
                 ev
             ) {
-                var cadCore = new Module.CadCore();
                 const file = ev.target.files[0];
                 if (file) {
                     const name = 'Example1.dwg';
