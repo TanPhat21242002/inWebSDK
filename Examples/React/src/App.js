@@ -6,6 +6,9 @@ function App() {
     <div className="App">
       <header className="App-header">
         <button id="download">Download</button>
+        <button id="drawCircleButton">Draw Circle</button>
+        {/* <button id="newFileButton">New</button>
+        <button id="saveButton">Save</button> */}
         <p>Example Drawing Web for React (READMODE ONLY)</p>
         <CanvasWrapper />
 
