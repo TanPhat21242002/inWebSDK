@@ -34,10 +34,10 @@ export const CanvasWrapper = React.memo((props) => {
 
   useEffect(() => {
     cachedWebAssemblyInstance().then(setModule);
-  }, []);
+  }, []); 
 
   useEffect(() => module && example(module));
-
+ 
   return (
     <div className="canvas-wrapper">
       <canvas id="canvas"></canvas>
